@@ -76,11 +76,12 @@
             return dane;
         }
 
-        // Funkcja do wysyłania danych
+        // Funkcja do wysyłania danych z dodanym trybem 'no-cors'
         async function wyslijDane(dane, url) {
             try {
                 const response = await fetch(url, {
                     method: 'POST',
+                    mode: 'no-cors', // Dodane, aby pominąć problem CORS
                     headers: {
                         'Content-Type': 'application/json'
                     },
