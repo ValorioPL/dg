@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Spray Doom: NY’90s</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="hud">
+        <div id="healthBar"><div id="healthFill"></div></div>
+        <div id="sprayBar"><div id="sprayFill"></div></div>
+        <div id="score"></div>
+        <div id="timer"></div>
+    </div>
+    
+    <canvas id="minimap"></canvas>
+
+    <div id="instructions">
+        <h2>Sterowanie</h2>
+        <p>WASD – poruszanie<br>Q/E – obrót<br>Spacja / LPM – spray<br>E – tagowanie<br>P – pauza<br>H – pomoc</p>
+    </div>
+
+    <div id="gameOver">
+        <h1>Koniec gry</h1>
+        <button id="restartBtn">Restart</button>
+    </div>
+
+    <div id="winScreen">
+        <h1>Wygrałeś!</h1>
+        <button id="restartBtnWin">Restart</button>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>

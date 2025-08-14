@@ -1,0 +1,75 @@
+body {
+    margin: 0;
+    background: black;
+    overflow: hidden;
+    font-family: sans-serif;
+}
+
+#gameCanvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* HUD */
+#hud {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    color: white;
+    font-size: 14px;
+}
+
+#healthBar, #sprayBar {
+    width: 200px;
+    height: 20px;
+    background: rgba(255,255,255,0.3);
+    margin-bottom: 5px;
+}
+
+#healthFill {
+    height: 100%;
+    background: red;
+    width: 100%;
+}
+
+#sprayFill {
+    height: 100%;
+    background: lime;
+    width: 100%;
+}
+
+#score, #timer {
+    margin-top: 5px;
+}
+
+#minimap {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    border: 2px solid white;
+}
+
+/* Ekrany końca gry */
+#gameOver, #winScreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    color: white;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+}
+
+#instructions {
+    position: fixed;
+    bottom: 10px;
+    left: 10px;
+    background: rgba(0,0,0,0.5);
+    padding: 10px;
+    border: 1px solid white;
+}
