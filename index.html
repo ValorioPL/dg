@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ASCII Video Studio — konwersja wideo na ASCII</title>
+  <style>
+    :root{
+      --accent:#7c3aed; /* fiolet */
+      --bg:#0b0b10;
+      --panel:#12121a;
+      --text:#e6e6f0;
+      --muted:#9aa0a6;
+      --ok:#10b981;
+      --warn:#f59e0b;
+      --danger:#ef4444;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:linear-gradient(180deg,var(--bg),#12121a);color:var(--text);font:500 14px/1.35 system-ui,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji"}
+    h1{font:800 20px/1.1 ui-sans-serif,system-ui;letter-spacing:.2px;margin:0 0 12px}
+    .app{display:grid;grid-template-columns:360px 1fr;gap:14px;min-height:100vh}
+    .left{padding:16px;position:sticky;top:0;height:100vh;overflow:auto;background:linear-gradient(180deg,var(--panel),#1a1a24);box-shadow:inset -1px 0 0 rgba(255,255,255,.04)}
+    .right{padding:16px;display:grid;grid-template-rows:auto 1fr auto;gap:10px;min-height:0}
+
+    .card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:12px 12px 10px;backdrop-filter:blur(6px);min-height:0}
+    .row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin:8px 0}
+    .row > label{color:var(--muted)}
+    .row input[type="range"]{width:180px}
+    .row input[type="number"]{width:90px;background:#0d0d13;color:#fff;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px}
+    .row input[type="text"], .row select{width:180px;background:#0d0d13;color:#fff;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px}
+    .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+    .chip{padding:6px 10px;border:1px solid rgba(255,255,255,.12);border-radius:999px;cursor:pointer;user-select:none}
+    .chip:hover{border-color:var(--accent)}
+
+    .section-title{font-weight:800;color:#cbd5e1;text-transform:uppercase;letter-spacing:.1em;font-size:12px;margin:6px 0 10px}
+
+    .drop{display:grid;place-items:center;gap:8px;height:120px;border:2px dashed rgba(255,255,255,.15);border-radius:14px;cursor:pointer;background:rgba(255,255,255,.02)}
+    .drop.drag{border-color:var(--accent);background:rgba(124,58,237,.08)}
+
+    button{appearance:none;border:0;border-radius:12px;background:var(--accent);color:white;font-weight:700;padding:10px 14px;cursor:pointer;box-shadow:0 6px 18px rgba(124,58,237,.25);transition:transform .08s ease,filter .2s}
+    button:hover{filter:brightness(1.05)}
+    button:active{transform:translateY(1px)}
+    .ghost{background:transparent;border:1px solid rgba(255,255,255,.16);color:#e5e7eb;box-shadow:none}
+    .danger{background:var(--danger)}
+    .ok{background:var(--ok)}
+
+    /* Podgląd — zawsze na ekranie */
+    .canvas-wrap{position:relative;display:grid;grid-template-rows:auto 1fr;gap:8px;min-height:0}
+    canvas{background:#000;border-radius:14px;image-rendering:auto; /* lepsze dla tekstu */}
+
+    .overlay{position:absolute;left:10px;bottom:10px;font:600 12px/1.2 ui-monospace,Menlo,Consolas,monospace;background:rgba(0,0,0,.45);padding:6px 8px;border-radius:8px}
+
+    .status{display:flex;gap:8px;align-items:center;color:#cbd5e1}
+    .dot{width:8px;height:8px;border-radius:999px;background:#64748b}
+    .dot.play{background:var(--ok)}
+    .dot.rec{background:var(--danger)}
+
+    .muted{color:#9aa0a6}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+    /* Pasek postępu */
+    .progress{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(2,6,23,.65);backdrop-filter:blur(4px);z-index:99}
+    .progress.hidden{display:none}
+    .progress-card{width:min(520px,90vw);background:rgba(17,24,39,.95);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:18px;color:#e5e7eb;box-shadow:0 20px 50px rgba(0,0,0,.4)}
+    .bar{height:10px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;margin-top:8px}
+    .bar>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#7c3aed,#06b6d4);border-radius:999px;transition:width .2s ease}
+    .indet{position:relative}
+    .indet:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.25),transparent);animation:slide 1.2s infinite}
+    @keyframes slide{0%{transform:translateX(-100%)}50%{transform:translateX(0%)}100%{transform:translateX(100%)}}
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="left">
+    <h1>ASCII Video Studio</h1>
+    <div class="card">
+      <div class="section-title">📂 Wczytaj wideo</div>
+      <label class="drop" id="drop">
+        <div>
+          <div style="font-weight:800">Przeciągnij & upuść plik</div>
+          <div class="muted">albo kliknij, by wybrać…</div>
+        </div>
+        <input id="file" type="file" accept="video/*" hidden />
+      </label>
+      <div class="row"><label>Tryb uniwersalny (FFmpeg.wasm)</label>
+        <input id="universal" type="checkbox" /></div>
+      <div class="row"><label>CRF (uniwersalny)</label>
+        <input id="crf" type="range" min="15" max="40" step="1" value="28" />
+        <span id="crfVal">28</span>
+      </div>
+      <div class="chips" style="margin-top:8px">
+        <span class="chip" id="demoBtn">▶️ Załaduj demo (WebM)</span>
+        <span class="chip" id="clearBtn">🗑️ Wyczyść</span>
+      </div>
+      <p class="muted" style="margin:8px 0 0">Nieobsługiwane formaty (AVI/MKV/WMV/TS/MOV/FLV/MPG) konwertują się <b>lokalnie</b> do WebM.</p>
+    </div>
+
+    <div class="card">
+      <div class="section-title">🎛️ Ustawienia ASCII</div>
+      <div class="row"><label>Kolumny</label>
+        <input id="cols" type="range" min="20" max="600" value="160" />
+        <input id="colsNum" type="number" min="10" max="1000" value="160" />
+      </div>
+      <div class="row"><label>Wiersze</label>
+        <input id="rows" type="range" min="10" max="400" value="90" />
+        <input id="rowsNum" type="number" min="10" max="1000" value="90" />
+      </div>
+      <div class="row"><label>FPS</label>
+        <input id="fps" type="range" min="4" max="60" value="24" />
+        <span id="fpsVal">24</span>
+      </div>
+      <div class="row"><label>Rozmiar czcionki</label>
+        <input id="fontSize" type="range" min="6" max="24" value="11" />
+        <span id="fontVal">11 px</span>
+      </div>
+      <div class="row"><label>Kontrast (wyostrzenie)</label>
+        <input id="contrast" type="range" min="0.5" max="3" step="0.05" value="1.2" />
+        <span id="contrastVal">1.2×</span>
+      </div>
+      <div class="row"><label>Gamma</label>
+        <input id="gamma" type="range" min="0.5" max="2.2" step="0.05" value="1.0" />
+        <span id="gammaVal">1.0</span>
+      </div>
+      <div class="row"><label>Odwróć jasność</label>
+        <input id="invert" type="checkbox" />
+      </div>
+      <div class="row"><label>Paleta znaków</label>
+        <input id="palette" type="text" value=" .,'`^:\\\\\\\\-~_+*=!iIlt1|()[]{}?\\/jrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$" />
+      </div>
+      <div class="row"><label>Preset</label>
+        <select id="preset">
+          <option value="custom">— Własna —</option>
+          <option value="grayscale">Grayscale</option>
+          <option value="matrix">Matrix</option>
+          <option value="cyberpunk">Cyberpunk</option>
+          <option value="letters">Letters</option>
+          <option value="numbers">Numbers</option>
+          <option value="binary">Binary</option>
+        </select>
+      </div>
+      <div class="grid2">
+        <div class="row"><label>Kolor znaków</label>
+          <input id="fg" type="color" value="#00ff90" />
+        </div>
+        <div class="row"><label>Kolor tła</label>
+          <input id="bg" type="color" value="#000000" />
+        </div>
+      </div>
+      <div class="row"><label>Neon glow (px)</label>
+        <input id="glow" type="range" min="0" max="40" step="1" value="8" />
+        <span id="glowVal">8</span>
+      </div>
+      <div class="row"><label>Zachowaj proporcje wideo</label>
+        <input id="keepAspect" type="checkbox" checked />
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">▶️ Sterowanie</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="startBtn">Start</button>
+        <button id="stopBtn" class="ghost">Stop</button>
+        <button id="recBtn" class="ok">⏺️ Nagrywaj</button>
+        <button id="stopRecBtn" class="danger">⏹️ Stop nagrywania</button>
+        <button id="downloadBtn" class="ghost">💾 Pobierz</button>
+      </div>
+      <div class="row"><label>Dźwięk z filmu</label>
+        <input id="audioToggle" type="checkbox" checked />
+      </div>
+    </div>
+  </aside>
+
+  <main class="right">
+    <div class="status card">
+      <span class="dot" id="playDot"></span>
+      <span id="status">Gotowe. Wczytaj plik i naciśnij Start.</span>
+      <span style="margin-left:auto" class="muted" id="meta"></span>
+    </div>
+
+    <div class="canvas-wrap card">
+      <div style="display:flex;gap:8px;align-items:center"><strong>Podgląd ASCII</strong>
+        <span class="muted" id="dimInfo" style="margin-left:8px"></span>
+      </div>
+      <canvas id="ascii"></canvas>
+      <div class="overlay" id="hud">—</div>
+    </div>
+
+    <div class="card" style="display:none">
+      <video id="video" controls playsinline style="width:100%"></video>
+    </div>
+  </main>
+</div>
+
+<!-- Overlay postępu -->
+<div id="progress" class="progress hidden" role="alert" aria-live="polite">
+  <div class="progress-card">
+    <div style="display:flex;gap:8px;align-items:center">
+      <div style="width:10px;height:10px;border-radius:999px;background:var(--accent)"></div>
+      <strong id="pTitle">Przygotowanie…</strong>
+      <span id="pPct" style="margin-left:auto;color:#cbd5e1">—</span>
+    </div>
+    <div class="bar"><i id="pBar"></i><div id="pIndet" class="indet" style="display:none;height:10px;border-radius:999px"></div></div>
+    <div id="pSub" class="muted" style="margin-top:8px">Ładowanie modułów…</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  // Elementy UI
+  const els = {
+    drop: document.getElementById('drop'),
+    file: document.getElementById('file'),
+    universal: document.getElementById('universal'),
+    crf: document.getElementById('crf'), crfVal: document.getElementById('crfVal'),
+    cols: document.getElementById('cols'), colsNum: document.getElementById('colsNum'),
+    rows: document.getElementById('rows'), rowsNum: document.getElementById('rowsNum'),
+    fps: document.getElementById('fps'), fpsVal: document.getElementById('fpsVal'),
+    fontSize: document.getElementById('fontSize'), fontVal: document.getElementById('fontVal'),
+    contrast: document.getElementById('contrast'), contrastVal: document.getElementById('contrastVal'),
+    gamma: document.getElementById('gamma'), gammaVal: document.getElementById('gammaVal'),
+    invert: document.getElementById('invert'),
+    palette: document.getElementById('palette'), preset: document.getElementById('preset'),
+    fg: document.getElementById('fg'), bg: document.getElementById('bg'), glow: document.getElementById('glow'), glowVal: document.getElementById('glowVal'),
+    keepAspect: document.getElementById('keepAspect'),
+    startBtn: document.getElementById('startBtn'), stopBtn: document.getElementById('stopBtn'),
+    recBtn: document.getElementById('recBtn'), stopRecBtn: document.getElementById('stopRecBtn'), downloadBtn: document.getElementById('downloadBtn'),
+    audioToggle: document.getElementById('audioToggle'),
+    status: document.getElementById('status'), meta: document.getElementById('meta'), hud: document.getElementById('hud'), playDot: document.getElementById('playDot'),
+    dimInfo: document.getElementById('dimInfo'),
+    demoBtn: document.getElementById('demoBtn'), clearBtn: document.getElementById('clearBtn'),
+    canvas: document.getElementById('ascii'), video: document.getElementById('video'),
+    // progress
+    pWrap: document.getElementById('progress'), pTitle: document.getElementById('pTitle'), pPct: document.getElementById('pPct'), pBar: document.getElementById('pBar'), pSub: document.getElementById('pSub'), pIndet: document.getElementById('pIndet')
+  };
+
+  // Stan
+  let state = {
+    srcBlob: null,
+    srcURL: '',
+    recording: false,
+    mediaRecorder: null,
+    recChunks: [],
+    lastBlob: null,
+    running: false,
+    targetFPS: 24,
+    rafId: 0,
+    lastFrameTime: 0,
+    audio: { ctx:null, srcNode:null, dest:null },
+    ffmpeg: { loaded:false, instance:null, loading:false },
+    lastDimChanged: 'cols',
+  };
+
+  // Konfiguracja ASCII
+  const cfg = {
+    cols: parseInt(els.cols.value,10),
+    rows: parseInt(els.rows.value,10),
+    colsRequested: parseInt(els.cols.value,10),
+    rowsRequested: parseInt(els.rows.value,10),
+    fps: parseInt(els.fps.value,10),
+    fontSize: parseInt(els.fontSize.value,10),
+    contrast: parseFloat(els.contrast.value),
+    gamma: parseFloat(els.gamma.value),
+    invert: !!els.invert.checked,
+    palette: els.palette.value,
+    fg: els.fg.value,
+    bg: els.bg.value,
+    glow: parseInt(els.glow.value,10)
+  };
+
+  // Ukryte płótna do próbkowania
+  const sampleCanvas = document.createElement('canvas');
+  const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+  const ctx = els.canvas.getContext('2d');
+
+  // Palety presetów
+  const PRESETS = {
+    grayscale: { palette: " .'`^\",:;Il!i~+_-?][}{1)(|\\/*tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$", fg:'#e2e8f0', bg:'#000', glow:0 },
+    matrix: { palette: '01', fg:'#00ff90', bg:'#000', glow:10 },
+    cyberpunk: { palette: " .:-=+*#%@", fg:'#00d1ff', bg:'#0a0414', glow:14 },
+    letters: { palette: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ', fg:'#e5e7eb', bg:'#000', glow:0 },
+    numbers: { palette: '0123456789', fg:'#f8fafc', bg:'#030712', glow:8 },
+    binary: { palette: '01', fg:'#b3f40c', bg:'#000', glow:6 },
+  };
+
+  // ====== Pasek postępu ======
+  function progressShow(title, sub){
+    els.pTitle.textContent = title || 'Przetwarzanie…';
+    els.pSub.textContent = sub || '';
+    els.pPct.textContent = '—';
+    els.pBar.style.width = '0%';
+    els.pIndet.style.display = 'block';
+    els.pWrap.classList.remove('hidden');
+  }
+  function progressSet(pct, sub){
+    els.pIndet.style.display = 'none';
+    const v = Math.max(0, Math.min(100, Math.round(pct)));
+    els.pBar.style.width = v + '%';
+    els.pPct.textContent = v + '%';
+    if (sub) els.pSub.textContent = sub;
+  }
+  function progressHide(){ els.pWrap.classList.add('hidden'); }
+
+  // ====== Pomoc ======
+  function setStatus(msg){ els.status.textContent = msg; }
+  function setMeta(msg){ els.meta.textContent = msg; }
+  function setDot(mode){ els.playDot.className = 'dot' + (mode==='play'?' play':'') + (mode==='rec'?' rec':''); }
+
+  function resetAll(){
+    stopRender();
+    stopRecording(true);
+    if (state.srcURL){ URL.revokeObjectURL(state.srcURL); state.srcURL=''; }
+    els.video.removeAttribute('src');
+    els.video.load();
+    setStatus('Gotowe. Wczytaj plik i naciśnij Start.');
+    setMeta('');
+    state.lastBlob = null;
+    els.downloadBtn.disabled = true;
+    ctx.clearRect(0,0,els.canvas.width,els.canvas.height);
+    els.dimInfo.textContent = '';
+  }
+
+  // Drag & drop i wybór pliku
+  els.clearBtn.addEventListener('click', resetAll);
+  els.drop.addEventListener('click', ()=> els.file.click());
+  ;['dragenter','dragover'].forEach(ev=> els.drop.addEventListener(ev, e=>{e.preventDefault(); els.drop.classList.add('drag');}));
+  ;['dragleave','drop'].forEach(ev=> els.drop.addEventListener(ev, e=>{e.preventDefault(); els.drop.classList.remove('drag');}));
+  els.drop.addEventListener('drop', e=>{
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  });
+  els.file.addEventListener('change', e=>{
+    const f = e.target.files[0];
+    if (f) handleFile(f);
+  });
+
+  // Demo (base64 placeholder)
+  els.demoBtn.addEventListener('click', async ()=>{
+    setStatus('Pobieram demo...');
+    const demoBase64 = 'GkXfo59ChoEBQveBAULygQGBAQEBQAAAAAAAQGQAAABW//8AAABpAAAAC2V4YW1wbGUtd2VibS53ZWJtAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB';
+    const blob = b64ToBlob(demoBase64, 'video/webm');
+    loadFromBlob(blob, 'demo.webm');
+  });
+
+  function b64ToBlob(b64, type){
+    const raw = atob(b64);
+    const arr = new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
+    return new Blob([arr],{type});
+  }
+
+  // ====== Wczytanie pliku z auto-konwersją dla AVI/MKV/… ======
+  async function handleFile(file){
+    resetAll();
+    const ext = (file.name.split('.').pop()||'').toLowerCase();
+    const mime = file.type || '';
+
+    const unplayableExt = ['avi','mkv','wmv','ts','mts','m2ts','vob','mpg','mpeg','flv','mov'];
+    const browserCanPlay = !!els.video.canPlayType && (els.video.canPlayType(mime) || '').length>0;
+    const shouldForceUniversal = unplayableExt.includes(ext) || !browserCanPlay;
+
+    if (shouldForceUniversal){ els.universal.checked = true; }
+
+    const useUniversal = els.universal.checked || shouldForceUniversal;
+    setMeta(`${file.name} • ${(file.size/1048576).toFixed(2)} MB`);
+
+    if (useUniversal){
+      progressShow('Konwersja do WebM', 'Ładowanie silnika FFmpeg…');
+      try{
+        const crf = parseInt(els.crf.value,10);
+        const outBlob = await transcodeToWebM(file, crf);
+        progressSet(100, 'Zakończono');
+        progressHide();
+        loadFromBlob(outBlob, file.name.replace(/\.[^.]+$/, '')+'.webm');
+      }catch(err){
+        console.error(err);
+        progressHide();
+        setStatus('❌ Błąd konwersji: '+ (err && err.message || err));
+      }
+    }else{
+      loadFromBlob(file, file.name);
+    }
+  }
+
+  function loadFromBlob(blob, name){
+    state.srcBlob = blob;
+    if (state.srcURL) URL.revokeObjectURL(state.srcURL);
+    state.srcURL = URL.createObjectURL(blob);
+    els.video.src = state.srcURL;
+    els.video.onloadedmetadata = ()=>{
+      setStatus('Załadowano: '+name+` (${els.video.videoWidth}×${els.video.videoHeight}, ${(els.video.duration||0).toFixed(1)}s)`);
+      prepareCanvas();
+    };
+    els.video.onerror = ()=> setStatus('Nie udało się wczytać wideo.');
+    els.video.load();
+  }
+
+  // ====== FFmpeg.wasm ======
+  async function ensureFFmpeg(){
+    if (state.ffmpeg.loaded) return state.ffmpeg.instance;
+    if (state.ffmpeg.loading) return state.ffmpeg.instance;
+    state.ffmpeg.loading = true;
+
+    progressShow('Konwersja do WebM', 'Ładowanie FFmpeg.wasm…');
+
+    await new Promise((resolve, reject)=>{
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/ffmpeg.min.js';
+      s.onload = resolve; s.onerror = ()=> reject(new Error('Nie można pobrać @ffmpeg/ffmpeg'));
+      document.head.appendChild(s);
+    });
+    const { createFFmpeg, fetchFile } = window.FFmpeg || {};
+    if (!createFFmpeg || !fetchFile) throw new Error('FFmpeg API niedostępne');
+    const ff = createFFmpeg({
+      log: true,
+      corePath: 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/ffmpeg-core.js'
+    });
+    state.ffmpeg.instance = ff;
+
+    await ff.load();
+    state.ffmpeg.loaded = true;
+    return ff;
+  }
+
+  async function transcodeToWebM(file, crf){
+    const ff = await ensureFFmpeg();
+    const { fetchFile } = window.FFmpeg;
+
+    const inName = 'input.' + (file.name.split('.').pop()||'bin');
+    const outName = 'out.webm';
+
+    try{ ff.FS('unlink', inName); }catch(e){}
+    try{ ff.FS('unlink', outName); }catch(e){}
+
+    ff.setProgress(({ratio})=>{
+      const pct = (ratio||0) * 100;
+      progressSet(pct, `Przetwarzanie… ${Math.round(pct)}%`);
+    });
+
+    progressSet(1, 'Kopiowanie pliku do pamięci…');
+    ff.FS('writeFile', inName, await fetchFile(file));
+
+    const args = [
+      '-i', inName,
+      '-c:v','libvpx-vp9','-b:v','0','-crf', String(crf),
+      '-row-mt','1','-deadline','good','-cpu-used','1',
+      '-c:a','libopus','-b:a','128k',
+      outName
+    ];
+
+    progressSet(3, 'Konwertowanie…');
+    await ff.run(...args);
+
+    progressSet(95, 'Finalizacja…');
+    const data = ff.FS('readFile', outName);
+    return new Blob([data.buffer], { type: 'video/webm' });
+  }
+
+  // ====== Ustawienia / Presety ======
+  const PRESET_SELECT = els.preset;
+  function applyPreset(name){
+    if (name==='custom') return;
+    const p = PRESETS[name];
+    if (!p) return;
+    els.palette.value = p.palette;
+    els.fg.value = p.fg; els.bg.value = p.bg; els.glow.value = p.glow; els.glowVal.textContent = p.glow;
+    updateCfg();
+  }
+
+  function updateCfg(){
+    cfg.colsRequested = parseInt(els.cols.value,10);
+    cfg.rowsRequested = parseInt(els.rows.value,10);
+    cfg.fps = parseInt(els.fps.value,10);
+    cfg.fontSize = parseInt(els.fontSize.value,10);
+    cfg.contrast = parseFloat(els.contrast.value);
+    cfg.gamma = parseFloat(els.gamma.value);
+    cfg.invert = !!els.invert.checked;
+    cfg.palette = els.palette.value || ' .:-=+*#%@';
+    cfg.fg = els.fg.value; cfg.bg = els.bg.value; cfg.glow = parseInt(els.glow.value,10);
+    els.fpsVal.textContent = cfg.fps;
+    els.fontVal.textContent = cfg.fontSize + ' px';
+    els.contrastVal.textContent = cfg.contrast.toFixed(2)+'×';
+    els.gammaVal.textContent = cfg.gamma.toFixed(2);
+    els.glowVal.textContent = cfg.glow;
+    prepareCanvas();
+  }
+
+  // Trackujemy która oś była zmieniona ostatnio
+  els.cols.addEventListener('input', ()=>{ state.lastDimChanged='cols'; updateCfg(); });
+  els.colsNum.addEventListener('change', ()=>{ state.lastDimChanged='cols'; els.cols.value=els.colsNum.value; updateCfg(); });
+  els.rows.addEventListener('input', ()=>{ state.lastDimChanged='rows'; updateCfg(); });
+  els.rowsNum.addEventListener('change', ()=>{ state.lastDimChanged='rows'; els.rows.value=els.rowsNum.value; updateCfg(); });
+
+  els.fps.addEventListener('input', updateCfg);
+  els.fontSize.addEventListener('input', updateCfg);
+  els.contrast.addEventListener('input', updateCfg);
+  els.gamma.addEventListener('input', updateCfg);
+  els.invert.addEventListener('change', updateCfg);
+  els.palette.addEventListener('change', updateCfg);
+  els.fg.addEventListener('change', updateCfg);
+  els.bg.addEventListener('change', updateCfg);
+  els.glow.addEventListener('input', updateCfg);
+  PRESET_SELECT.addEventListener('change', ()=> applyPreset(PRESET_SELECT.value));
+  els.keepAspect.addEventListener('change', ()=> prepareCanvas());
+  els.crf.addEventListener('input', ()=> els.crfVal.textContent = els.crf.value);
+
+  // ====== Przygotowanie canvasu + dopasowanie do ekranu ======
+  function prepareCanvas(){
+    // Ustaw font aby mieć prawidłowe charW/charH
+    ctx.font = `bold ${cfg.fontSize}px ui-monospace, Menlo, Consolas, monospace`;
+    ctx.textBaseline = 'top';
+    const charW = ctx.measureText('M').width; // szerokość znaku
+    const charH = Math.floor(cfg.fontSize * 1.15); // wysokość komórki
+
+    let cols = Math.max(2, parseInt(cfg.colsRequested,10) || 2);
+    let rows = Math.max(2, parseInt(cfg.rowsRequested,10) || 2);
+
+    const haveVideo = !!(els.video.videoWidth && els.video.videoHeight);
+    if (els.keepAspect.checked && haveVideo){
+      const videoAspect = els.video.videoWidth / els.video.videoHeight; // szer/wys
+      if (state.lastDimChanged === 'rows'){
+        cols = Math.max(2, Math.round(rows * videoAspect * (charH/charW)));
+      } else {
+        rows = Math.max(2, Math.round(cols * ((charW/charH) / videoAspect)));
+      }
+    }
+
+    // Aktualne wymiary siatki
+    cfg.cols = cols; cfg.rows = rows;
+
+    // Bufor rysowania (piksele)
+    els.canvas.width = Math.max(2, Math.floor(cols * charW));
+    els.canvas.height = Math.max(2, Math.floor(rows * charH));
+
+    // Canvas próbkujący
+    sampleCanvas.width = cols; sampleCanvas.height = rows;
+
+    // UI: pokaż rzeczywiste wartości
+    els.cols.value = String(cols); els.colsNum.value = String(cols);
+    els.rows.value = String(rows); els.rowsNum.value = String(rows);
+
+    els.dimInfo.textContent = `Canvas: ${els.canvas.width}×${els.canvas.height} • Siatka: ${cols}×${rows}`;
+
+    // Dopasuj wyświetlanie do okna
+    fitToScreen();
+  }
+
+  function fitToScreen(){
+    // Oblicz dostępny obszar w prawej kolumnie
+    const right = document.querySelector('main.right');
+    const statusH = right.querySelector('.status').getBoundingClientRect().height;
+    const gap = 10; // grid-gap
+    const padd = 32; // przybliżone marginesy/paddingi
+    const availH = Math.max(120, window.innerHeight - statusH - padd - 140); // 140 ~ inne marginesy
+    const availW = right.clientWidth - 32;
+
+    const s = Math.min(availW / els.canvas.width, availH / els.canvas.height, 1);
+    els.canvas.style.width = Math.floor(els.canvas.width * s) + 'px';
+    els.canvas.style.height = Math.floor(els.canvas.height * s) + 'px';
+  }
+
+  window.addEventListener('resize', fitToScreen);
+
+  // ====== Render ASCII ======
+  function startRender(){
+    if (!els.video.src){ setStatus('Najpierw wczytaj wideo.'); return; }
+    if (state.running) return;
+    state.running = true; setDot('play');
+    setStatus('Odtwarzanie i render ASCII…');
+
+    if (els.audioToggle.checked){
+      try{ setupAudioGraph(); }catch(err){ console.warn('Audio graph failed', err); }
+    } else { teardownAudioGraph(); }
+
+    els.video.play().catch(e=> console.warn('Autoplay wymaga interakcji użytkownika', e));
+    state.lastFrameTime = performance.now();
+    const step = (now)=>{
+      if (!state.running) return;
+      const elapsed = now - state.lastFrameTime;
+      const interval = 1000 / cfg.fps;
+      if (elapsed >= interval){
+        state.lastFrameTime = now - (elapsed % interval);
+        drawAsciiFrame();
+      }
+      state.rafId = requestAnimationFrame(step);
+    };
+    state.rafId = requestAnimationFrame(step);
+  }
+
+  function stopRender(){
+    state.running = false; cancelAnimationFrame(state.rafId); setDot();
+    els.video.pause();
+  }
+
+  function drawAsciiFrame(){
+    const v = els.video;
+    if (!v.videoWidth || v.paused || v.ended) return;
+
+    // 1) Próbkujemy klatkę do siatki cols×rows
+    sampleCtx.drawImage(v, 0, 0, cfg.cols, cfg.rows);
+    const { data } = sampleCtx.getImageData(0,0,cfg.cols,cfg.rows);
+
+    // 2) Tło
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = cfg.bg; ctx.fillRect(0,0,els.canvas.width,els.canvas.height);
+
+    // 3) Tekst
+    ctx.font = `bold ${cfg.fontSize}px ui-monospace, Menlo, Consolas, monospace`;
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = cfg.fg; ctx.shadowColor = cfg.fg; ctx.shadowBlur = cfg.glow;
+
+    const charW = ctx.measureText('M').width;
+    const charH = Math.floor(cfg.fontSize * 1.15);
+
+    const pal = cfg.palette; const n = pal.length-1 || 1;
+
+    let i = 0;
+    for (let y=0; y<cfg.rows; y++){
+      let line = '';
+      for (let x=0; x<cfg.cols; x++){
+        const r = data[i]; const g = data[i+1]; const b = data[i+2];
+        let Y = (0.2126*r + 0.7152*g + 0.0722*b) / 255;
+        Y = 0.5 + (Y-0.5) * cfg.contrast; Y = Math.max(0, Math.min(1, Y));
+        if (cfg.gamma !== 1){ Y = Math.pow(Y, 1/cfg.gamma); }
+        if (cfg.invert) Y = 1 - Y;
+        const idx = Math.max(0, Math.min(n, Math.round(Y * n)));
+        line += pal[idx] || ' ';
+        i += 4;
+      }
+      ctx.fillText(line, 0, y * charH);
+    }
+    ctx.restore();
+
+    els.hud.textContent = `${cfg.cols}×${cfg.rows} @ ${cfg.fps} FPS`;
+  }
+
+  // ====== Audio + Nagrywanie ======
+  function setupAudioGraph(){
+    try{
+      if (!state.audio.ctx){ state.audio.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+      if (!state.audio.srcNode){ state.audio.srcNode = state.audio.ctx.createMediaElementSource(els.video); }
+      if (!state.audio.dest){ state.audio.dest = state.audio.ctx.createMediaStreamDestination(); }
+      state.audio.srcNode.connect(state.audio.ctx.destination);
+      state.audio.srcNode.connect(state.audio.dest);
+    }catch(err){ console.warn('Audio setup problem:', err); }
+  }
+  function teardownAudioGraph(){
+    try{
+      if (state.audio.srcNode){ state.audio.srcNode.disconnect(); state.audio.srcNode = null; }
+      if (state.audio.dest){ /* noop */ }
+    }catch(err){ console.warn(err); }
+  }
+
+  function pickRecorderMime(){
+    const candidates = [
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm'
+    ];
+    for (const mt of candidates){ if (MediaRecorder.isTypeSupported(mt)) return mt; }
+    return '';
+  }
+
+  function startRecording(){
+    if (state.recording) return;
+    const mime = pickRecorderMime();
+    if (!mime){ alert('Ten browser nie wspiera MediaRecorder dla WebM.'); return; }
+
+    const cvsStream = els.canvas.captureStream(cfg.fps || 24);
+    let mixed;
+    if (els.audioToggle.checked && state.audio.dest){
+      mixed = new MediaStream([...cvsStream.getVideoTracks(), ...state.audio.dest.stream.getAudioTracks()]);
+    } else { mixed = cvsStream; }
+
+    state.recChunks = [];
+    const mr = new MediaRecorder(mixed, { mimeType: mime, videoBitsPerSecond: 4_000_000 });
+    mr.ondataavailable = (e)=>{ if (e.data && e.data.size) state.recChunks.push(e.data); };
+    mr.onstop = ()=>{
+      state.lastBlob = new Blob(state.recChunks, { type: mime.split(';')[0] });
+      els.downloadBtn.disabled = !state.lastBlob;
+      setStatus('Nagrywanie zakończone. Możesz pobrać plik.'); setDot();
+    };
+    mr.start(); state.mediaRecorder = mr; state.recording = true; setDot('rec');
+    setStatus('Nagrywam ASCII + audio…');
+  }
+
+  function stopRecording(silent){
+    if (!state.recording) return;
+    try{ state.mediaRecorder.stop(); }catch(err){ console.warn(err); }
+    state.recording = false; state.mediaRecorder = null;
+    if (!silent) setStatus('Zatrzymano nagrywanie.');
+  }
+
+  // ====== Zdarzenia sterowania ======
+  els.startBtn.addEventListener('click', startRender);
+  els.stopBtn.addEventListener('click', stopRender);
+  els.recBtn.addEventListener('click', ()=>{ if (!state.running) startRender(); startRecording(); });
+  els.stopRecBtn.addEventListener('click', ()=> stopRecording());
+  els.downloadBtn.addEventListener('click', ()=>{
+    if (!state.lastBlob){ alert('Brak nagrania do pobrania.'); return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(state.lastBlob); a.download = 'ascii-video.webm';
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  // Start
+  prepareCanvas();
+  setStatus('Gotowe. Wczytaj plik i naciśnij Start.');
+})();
+</script>
+</body>
+</html>
